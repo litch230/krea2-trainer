@@ -97,10 +97,13 @@ Default settings:
 
 - save every 100 steps
 - save optimizer state
+- keep only the latest optimizer-state directory
 - save a final checkpoint after **Stop and save**
 - sample every epoch
 
 Sampling needs a prompts file. Select one in **Sample prompts**, or set **Sampling schedule** to **Disabled**.
+
+The GUI restores the paths, dataset entries, parameters, checkboxes, cache settings, and sampling settings used in the previous session. They are stored in `%LOCALAPPDATA%\Krea2Trainer\ui_settings.json`.
 
 ## Command line
 

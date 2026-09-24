@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -44,6 +45,7 @@ os.environ.setdefault("FOR_DISABLE_CONSOLE_CTRL_HANDLER", "1")
 ROOT = Path(__file__).resolve().parent
 TOKEN_LENGTHS = (128, 256, 384, 512, 768, 1024, 2048)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+SETTINGS_FILE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Krea2Trainer" / "ui_settings.json"
 
 
 def read_dataset_entries(path: Path) -> list[dict[str, Any]]:
@@ -238,6 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
     training.add_argument("--save-every-n-epochs", type=int)
     training.add_argument("--save-state", action="store_true")
     training.add_argument("--save-state-on-train-end", action="store_true")
+    training.add_argument(
+        "--keep-only-latest-state",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="replace older optimizer-state directories when a new state is saved",
+    )
     training.add_argument("--sample-prompts", type=Path)
     training.add_argument("--sample-every-n-steps", type=int)
     training.add_argument("--sample-every-n-epochs", type=int)
@@ -463,6 +471,8 @@ def make_config(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
         training["save_state"] = True
     if args.save_state_on_train_end:
         training["save_state_on_train_end"] = True
+    if args.save_state or args.save_state_on_train_end:
+        training["keep_only_latest_state"] = args.keep_only_latest_state
     if args.sample_prompts is not None:
         training["sample_prompts"] = str(args.sample_prompts.resolve())
     if args.sample_every_n_steps is not None:
@@ -775,6 +785,94 @@ def launch_ui() -> None:
 
     status = tk.StringVar(value="Select a dataset config to view its entries.")
     dataset_records: dict[str, dict[str, Any]] = {}
+
+    def save_ui_settings() -> None:
+        """Persist the current form without storing model data or credentials."""
+        datasets: list[dict[str, Any]] = []
+        for entry in dataset_records.values():
+            stored_entry = dict(entry)
+            stored_entry["image_dirs"] = [str(path) for path in entry.get("image_dirs", [])]
+            resolution = stored_entry.get("resolution")
+            if isinstance(resolution, tuple):
+                stored_entry["resolution"] = list(resolution)
+            datasets.append(stored_entry)
+
+        document = {
+            "version": 1,
+            "paths": {key: variable.get() for key, variable in paths.items()},
+            "parameters": {key: variable.get() for key, variable in parameters.items()},
+            "flags": {key: bool(variable.get()) for key, variable in flags.items()},
+            "cache": {
+                "skip_creation": bool(skip_cache_creation.get()),
+                "vae_batch": vae_cache_batch.get(),
+                "text_batch": text_cache_batch.get(),
+            },
+            "saving": {
+                "every_steps": save_every_steps.get(),
+                "every_epochs": save_every_epochs.get(),
+                "optimizer_state": bool(save_training_state.get()),
+                "sampling_mode": sampling_mode.get(),
+                "sampling_interval": sampling_interval.get(),
+                "sample_prompts": sample_prompts.get(),
+            },
+            "datasets": datasets,
+        }
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        temporary = SETTINGS_FILE.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(SETTINGS_FILE)
+
+    def restore_ui_settings() -> None:
+        if not SETTINGS_FILE.is_file():
+            return
+        try:
+            document = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            if not isinstance(document, dict):
+                raise ValueError("settings root must be an object")
+
+            for key, value in document.get("paths", {}).items():
+                if key in paths and isinstance(value, str):
+                    paths[key].set(value)
+            for key, value in document.get("parameters", {}).items():
+                if key in parameters and isinstance(value, (str, int, float)):
+                    parameters[key].set(str(value))
+            for key, value in document.get("flags", {}).items():
+                if key in flags and isinstance(value, bool):
+                    flags[key].set(value)
+
+            cache = document.get("cache", {})
+            if isinstance(cache, dict):
+                skip_cache_creation.set(bool(cache.get("skip_creation", skip_cache_creation.get())))
+                vae_cache_batch.set(str(cache.get("vae_batch", vae_cache_batch.get())))
+                text_cache_batch.set(str(cache.get("text_batch", text_cache_batch.get())))
+
+            saving = document.get("saving", {})
+            if isinstance(saving, dict):
+                save_every_steps.set(str(saving.get("every_steps", save_every_steps.get())))
+                save_every_epochs.set(str(saving.get("every_epochs", save_every_epochs.get())))
+                save_training_state.set(bool(saving.get("optimizer_state", save_training_state.get())))
+                mode = str(saving.get("sampling_mode", sampling_mode.get()))
+                sampling_mode.set(mode if mode in {"Disabled", "Steps", "Epochs"} else "Epochs")
+                sampling_interval.set(str(saving.get("sampling_interval", sampling_interval.get())))
+                sample_prompts.set(str(saving.get("sample_prompts", sample_prompts.get())))
+
+            stored_datasets = document.get("datasets", [])
+            if isinstance(stored_datasets, list):
+                for raw_entry in stored_datasets:
+                    if not isinstance(raw_entry, dict):
+                        continue
+                    entry = dict(raw_entry)
+                    entry["image_dirs"] = [Path(value) for value in entry.get("image_dirs", []) if isinstance(value, str)]
+                    insert_dataset_entry(entry)
+
+            if dataset_records:
+                status.set(f"Restored {len(dataset_records)} dataset(s) from the previous session.")
+            elif paths["dataset"].get().strip() and Path(paths["dataset"].get().strip()).is_file():
+                load_dataset()
+            else:
+                status.set("Previous settings restored.")
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            status.set(f"Could not restore previous settings: {exc}")
 
     def insert_dataset_entry(entry: dict[str, Any]) -> str:
         resolution = entry.get("resolution", "—")
@@ -1092,6 +1190,10 @@ def launch_ui() -> None:
         else:
             status.set(f"Training exited with code {return_code}. Check the log.")
         append_log(f"\n[process exited with code {return_code}]\n")
+        try:
+            save_ui_settings()
+        except OSError as exc:
+            append_log(f"[could not save interface settings: {exc}]\n")
         if process_state.get("close_after"):
             root.destroy()
 
@@ -1107,6 +1209,7 @@ def launch_ui() -> None:
             return
         try:
             command, stop_file = build_training_command()
+            save_ui_settings()
         except (OSError, RuntimeError, ValueError) as exc:
             messagebox.showerror("Cannot start training", str(exc), parent=root)
             return
@@ -1152,6 +1255,11 @@ def launch_ui() -> None:
         stop_button.configure(state="disabled")
 
     def close_window() -> None:
+        try:
+            save_ui_settings()
+        except OSError as exc:
+            messagebox.showerror("Cannot save settings", str(exc), parent=root)
+            return
         if process_state.get("process") is not None:
             if not messagebox.askyesno(
                 "Training is running",
@@ -1174,6 +1282,7 @@ def launch_ui() -> None:
     ttk.Button(button_row, text="Close", command=close_window).pack(side="right")
     ttk.Label(content, textvariable=status, style="Subtitle.TLabel").pack(anchor="w", pady=(10, 0))
 
+    restore_ui_settings()
     update_preview()
     root.protocol("WM_DELETE_WINDOW", close_window)
     root.mainloop()

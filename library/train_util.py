@@ -5100,6 +5100,11 @@ def add_training_arguments(parser: argparse.ArgumentParser, support_dreambooth: 
         action="store_true",
         help="save training state (including optimizer states etc.) on train end / optimizerなど学習状態も含めたstateを学習完了時に保存する",
     )
+    parser.add_argument(
+        "--keep_only_latest_state",
+        action="store_true",
+        help="keep a single resumable training-state directory and replace older state directories",
+    )
     parser.add_argument("--resume", type=str, default=None, help="saved state to resume training / 学習再開するモデルのstate")
 
     parser.add_argument("--train_batch_size", type=int, default=1, help="batch size for training / 学習時のバッチサイズ")
@@ -7485,6 +7490,8 @@ def save_and_remove_state_on_epoch_end(args: argparse.Namespace, accelerator, ep
     os.makedirs(args.output_dir, exist_ok=True)
 
     state_dir = os.path.join(args.output_dir, EPOCH_STATE_NAME.format(model_name, epoch_no))
+    if getattr(args, "keep_only_latest_state", False) and os.path.isdir(state_dir):
+        shutil.rmtree(state_dir)
     accelerator.save_state(state_dir)
     if args.save_state_to_huggingface:
         logger.info("uploading state to huggingface.")
@@ -7498,6 +7505,9 @@ def save_and_remove_state_on_epoch_end(args: argparse.Namespace, accelerator, ep
             logger.info(f"removing old state: {state_dir_old}")
             shutil.rmtree(state_dir_old)
 
+    if getattr(args, "keep_only_latest_state", False):
+        remove_other_training_state_directories(args.output_dir, model_name, state_dir)
+
     clean_memory_on_device(accelerator.device)
 
 
@@ -7509,6 +7519,8 @@ def save_and_remove_state_stepwise(args: argparse.Namespace, accelerator, step_n
     os.makedirs(args.output_dir, exist_ok=True)
 
     state_dir = os.path.join(args.output_dir, STEP_STATE_NAME.format(model_name, step_no))
+    if getattr(args, "keep_only_latest_state", False) and os.path.isdir(state_dir):
+        shutil.rmtree(state_dir)
     accelerator.save_state(state_dir)
     if args.save_state_to_huggingface:
         logger.info("uploading state to huggingface.")
@@ -7526,6 +7538,9 @@ def save_and_remove_state_stepwise(args: argparse.Namespace, accelerator, step_n
                 logger.info(f"removing old state: {state_dir_old}")
                 shutil.rmtree(state_dir_old)
 
+    if getattr(args, "keep_only_latest_state", False):
+        remove_other_training_state_directories(args.output_dir, model_name, state_dir)
+
     clean_memory_on_device(accelerator.device)
 
 
@@ -7537,11 +7552,31 @@ def save_state_on_train_end(args: argparse.Namespace, accelerator):
     os.makedirs(args.output_dir, exist_ok=True)
 
     state_dir = os.path.join(args.output_dir, LAST_STATE_NAME.format(model_name))
+    if getattr(args, "keep_only_latest_state", False) and os.path.isdir(state_dir):
+        shutil.rmtree(state_dir)
     accelerator.save_state(state_dir)
 
     if args.save_state_to_huggingface:
         logger.info("uploading last state to huggingface.")
         huggingface_util.upload(args, state_dir, "/" + LAST_STATE_NAME.format(model_name))
+
+    if getattr(args, "keep_only_latest_state", False):
+        remove_other_training_state_directories(args.output_dir, model_name, state_dir)
+
+
+def remove_other_training_state_directories(output_dir: str, model_name: str, keep_dir: str) -> None:
+    """Remove older state directories without touching model checkpoints."""
+    keep_path = os.path.normcase(os.path.abspath(keep_dir))
+    escaped_name = re.escape(model_name)
+    state_name = re.compile(rf"^{escaped_name}(?:-step\d+|-\d+)?-state$")
+    for entry in os.scandir(output_dir):
+        if not entry.is_dir(follow_symlinks=False) or not state_name.fullmatch(entry.name):
+            continue
+        entry_path = os.path.normcase(os.path.abspath(entry.path))
+        if entry_path == keep_path:
+            continue
+        logger.info("removing superseded state: %s", entry.path)
+        shutil.rmtree(entry.path)
 
 
 def save_sd_model_on_train_end(
