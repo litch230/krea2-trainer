@@ -18,6 +18,10 @@ Run:
 start_ui.bat
 ```
 
+## Update
+
+Run `update.bat` from a copy cloned with Git.
+
 ## Usage
 
 1. Select the DiT, Qwen3-VL, and VAE files.

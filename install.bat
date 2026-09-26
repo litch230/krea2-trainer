@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
+if /i "%~1"=="--no-pause" set "NO_PAUSE=1"
 
 echo.
 echo Krea 2 Trainer - dependency installer
@@ -82,24 +83,24 @@ if errorlevel 1 goto install_failed
 
 echo.
 echo Installation completed. Run start_ui.bat to open the trainer.
-pause
+if not defined NO_PAUSE pause
 exit /b 0
 
 :no_python
 echo.
 echo Python 3.10, 3.11, or 3.12 (64-bit) was not found.
 echo Install Python from https://www.python.org/downloads/windows/
-pause
+if not defined NO_PAUSE pause
 exit /b 1
 
 :venv_failed
 echo.
 echo Could not create the .venv environment.
-pause
+if not defined NO_PAUSE pause
 exit /b 1
 
 :install_failed
 echo.
 echo Installation failed. Review the error above, then run install.bat again.
-pause
+if not defined NO_PAUSE pause
 exit /b 1
