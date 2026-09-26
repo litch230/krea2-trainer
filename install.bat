@@ -2,6 +2,9 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 if /i "%~1"=="--no-pause" set "NO_PAUSE=1"
+set "PIP_CONFIG_FILE=NUL"
+set "PIP_INDEX_URL="
+set "PIP_EXTRA_INDEX_URL=https://pypi.org/simple"
 
 echo.
 echo Krea 2 Trainer - dependency installer
@@ -92,7 +95,7 @@ if not exist ".venv\Scripts\python.exe" goto venv_failed
 
 :install_packages
 set "VENV_PYTHON=%~dp0.venv\Scripts\python.exe"
-"%VENV_PYTHON%" -m pip install --upgrade pip setuptools wheel
+"%VENV_PYTHON%" -m pip install --upgrade pip setuptools wheel --index-url https://pypi.org/simple
 if errorlevel 1 goto install_failed
 
 if defined KREA2_TORCH_INDEX_URL goto custom_torch
@@ -101,6 +104,7 @@ if errorlevel 1 goto cpu_torch
 
 echo.
 echo NVIDIA GPU detected. Installing the CUDA build of PyTorch...
+set "PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu128"
 "%VENV_PYTHON%" -m pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
 if errorlevel 1 goto install_failed
 goto common_packages
@@ -108,6 +112,7 @@ goto common_packages
 :custom_torch
 echo.
 echo Installing PyTorch from %KREA2_TORCH_INDEX_URL%...
+set "PIP_EXTRA_INDEX_URL=%KREA2_TORCH_INDEX_URL%"
 "%VENV_PYTHON%" -m pip install torch==2.7.0 torchvision==0.22.0 --index-url "%KREA2_TORCH_INDEX_URL%"
 if errorlevel 1 goto install_failed
 goto common_packages
@@ -117,11 +122,13 @@ echo.
 echo WARNING: No NVIDIA driver was detected.
 echo Installing CPU PyTorch so the interface and validation tools can run.
 echo Krea 2 training on Windows requires a CUDA-compatible NVIDIA GPU.
+set "PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu"
 "%VENV_PYTHON%" -m pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cpu
 if errorlevel 1 goto install_failed
 
 :common_packages
-"%VENV_PYTHON%" -m pip install -r requirements.txt
+set "PIP_EXTRA_INDEX_URL=https://pypi.org/simple"
+"%VENV_PYTHON%" -m pip install -r requirements.txt --index-url https://pypi.org/simple
 if errorlevel 1 goto install_failed
 
 "%VENV_PYTHON%" -c "import torch, tkinter, accelerate, transformers, diffusers, bitsandbytes; print('PyTorch:', torch.__version__); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'not detected')"
