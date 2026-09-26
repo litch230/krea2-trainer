@@ -77,6 +77,14 @@ if exist "%ProgramFiles%\Python312\python.exe" (
     "%ProgramFiles%\Python312\python.exe" -m venv .venv
     goto check_venv
 )
+
+set "PYTHON_EXE="
+for /f "usebackq delims=" %%P in (`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0find_python.ps1" 2^>nul`) do if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
+if defined PYTHON_EXE (
+    echo Found Python at "%PYTHON_EXE%"
+    "%PYTHON_EXE%" -m venv .venv
+    goto check_venv
+)
 goto no_python
 
 :check_venv
@@ -130,7 +138,8 @@ echo Python 3.10, 3.11, 3.12, or 3.13 (64-bit) was not found.
 if defined PYTHON_INSTALL_ATTEMPTED goto python_install_failed
 
 set "INSTALL_PYTHON="
-set /p "INSTALL_PYTHON=Install Python 3.12 now? [Y/N]: "
+echo If Python is already installed but was not detected, this is safe to install side by side.
+set /p "INSTALL_PYTHON=Install a separate Python 3.12 for this trainer now? [Y/N]: "
 if /i not "%INSTALL_PYTHON%"=="Y" goto python_manual_install
 set "PYTHON_INSTALL_ATTEMPTED=1"
 
