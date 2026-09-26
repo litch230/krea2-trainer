@@ -25,6 +25,14 @@ KREA2_FP8_OPTIMIZATION_TARGET_KEYS = ["blocks."]
 KREA2_FP8_OPTIMIZATION_EXCLUDE_KEYS = ["mod.", "norm", "txtfusion"]
 
 
+def checkpoint_uses_fp8(path: str) -> bool:
+    """Return whether a safetensors checkpoint already contains FP8 tensors."""
+    from safetensors import safe_open
+
+    with safe_open(str(path), framework="pt", device="cpu") as handle:
+        return any("F8" in str(handle.get_slice(key).get_dtype()).upper() for key in handle.keys())
+
+
 def _read_comfy_fp8_full_precision_layers(path: str) -> set[str]:
     """Read Comfy's per-layer scaled-FP8 execution policy, if present."""
     try:
@@ -78,6 +86,10 @@ def load_krea2_dit(
     device = torch.device(device)
     loading_device = device if loading_device is None else torch.device(loading_device)
     has_lora = lora_weights is not None and len(lora_weights) > 0
+
+    if fp8_scaled and checkpoint_uses_fp8(dit_path):
+        logger.warning("The DiT checkpoint already contains FP8 weights; skipping BF16-to-FP8 conversion.")
+        fp8_scaled = False
 
     logger.info(
         f"Loading Krea 2 DiT weights from {dit_path}"
@@ -156,6 +168,10 @@ def load_krea2_dit_state_dict(
     calc_dev = torch.device(calc_device)
     rd = torch.device(result_device)
     move_to_device = calc_dev == rd
+
+    if fp8_scaled and checkpoint_uses_fp8(dit_path):
+        logger.warning("The DiT checkpoint already contains FP8 weights; skipping BF16-to-FP8 conversion.")
+        fp8_scaled = False
 
     if fp8_scaled:
         sd = load_safetensors_with_lora_and_fp8(

@@ -396,9 +396,7 @@ def validate_gpu(skip: bool) -> tuple[str, float] | None:
     return props.name, gib
 
 
-def validate_model_precision(path: Path, force_conversion: bool) -> None:
-    if force_conversion:
-        return
+def validate_model_precision(path: Path, force_conversion: bool) -> bool:
     try:
         from safetensors import safe_open
     except ImportError as exc:
@@ -408,11 +406,12 @@ def validate_model_precision(path: Path, force_conversion: bool) -> None:
             uses_fp8 = any("F8" in str(handle.get_slice(key).get_dtype()).upper() for key in handle.keys())
     except Exception as exc:
         raise RuntimeError(f"could not inspect DiT checkpoint precision: {exc}") from exc
-    if not uses_fp8:
+    if not uses_fp8 and not force_conversion:
         raise ValueError(
             "the DiT checkpoint is not FP8; use a native scaled-FP8 checkpoint or pass "
             "--force-fp8-conversion"
         )
+    return uses_fp8
 
 
 def make_config(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
@@ -681,7 +680,7 @@ def launch_ui() -> None:
         ("Frozen prefix without gradients", "frozen_prefix"),
         ("Train final layer", "train_final"),
         ("Train text fusion", "train_text_fusion"),
-        ("Convert DiT to FP8", "force_fp8"),
+        ("Convert BF16 DiT to FP8", "force_fp8"),
     )
     for column in range(2):
         flag_frame.columnconfigure(column, weight=1)
@@ -1305,7 +1304,10 @@ def main(argv: list[str] | None = None) -> int:
         configuration_only = bool(args.dry_run or args.write_config)
         gpu = None if configuration_only else validate_gpu(args.skip_vram_check)
         if not configuration_only:
-            validate_model_precision(args.model, args.force_fp8_conversion)
+            model_uses_fp8 = validate_model_precision(args.model, args.force_fp8_conversion)
+            if model_uses_fp8 and args.force_fp8_conversion:
+                print("DiT checkpoint is already FP8; BF16-to-FP8 conversion was disabled.")
+                args.force_fp8_conversion = False
         config = make_config(args)
         rendered = dump_toml(config)
 

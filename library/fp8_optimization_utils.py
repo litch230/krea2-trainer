@@ -183,6 +183,12 @@ def quantize_weight(
     quantization_mode: str = "block",
     block_size: int = 64,
 ):
+    # Native FP8 weights are already quantized. This check must happen before
+    # the temporary block-layout reshape below, otherwise a 2-D Linear weight
+    # is returned as [out, blocks, block_size].
+    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+        return tensor, torch.tensor(1.0, dtype=torch.float32, device=tensor.device)
+
     original_shape = tensor.shape
 
     # Determine quantization mode
@@ -202,9 +208,6 @@ def quantize_weight(
     elif quantization_mode == "channel":
         if tensor.ndim != 2:
             quantization_mode = "tensor"  # fallback to per-tensor
-
-    if tensor.dtype == torch.float8_e4m3fn or tensor.dtype == torch.float8_e5m2:
-        return tensor, torch.tensor(1.0)
 
     # Calculate scale factor (per-tensor or per-output-channel with percentile or max)
     # value shape is expected to be [out_features, in_features] for Linear weights
