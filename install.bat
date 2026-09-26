@@ -11,17 +11,18 @@ if exist ".venv\Scripts\python.exe" goto install_packages
 where py >nul 2>nul
 if errorlevel 1 goto try_python
 
-py -3.12 -c "import sys" >nul 2>nul
-if not errorlevel 1 (
-    py -3.12 -m venv .venv
-    goto check_venv
-)
+set "PY_LAUNCHER="
+call :find_py_version 3.12
+if defined PY_LAUNCHER goto create_venv_with_launcher
+call :find_py_version 3.11
+if defined PY_LAUNCHER goto create_venv_with_launcher
+call :find_py_version 3.10
+if defined PY_LAUNCHER goto create_venv_with_launcher
+goto try_python
 
-py -3.11 -c "import sys" >nul 2>nul
-if not errorlevel 1 (
-    py -3.11 -m venv .venv
-    goto check_venv
-)
+:create_venv_with_launcher
+%PY_LAUNCHER% -m venv .venv
+goto check_venv
 
 :try_python
 where python >nul 2>nul
@@ -29,6 +30,15 @@ if errorlevel 1 goto no_python
 python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>nul
 if errorlevel 1 goto no_python
 python -m venv .venv
+goto check_venv
+
+:find_py_version
+set "PY_CHECK_FILE=%TEMP%\krea2-python-check-%RANDOM%-%RANDOM%.tmp"
+del /q "%PY_CHECK_FILE%" >nul 2>nul
+py -%1 -c "from pathlib import Path; Path(r'%PY_CHECK_FILE%').touch()" >nul 2>nul
+if exist "%PY_CHECK_FILE%" set "PY_LAUNCHER=py -%1"
+del /q "%PY_CHECK_FILE%" >nul 2>nul
+exit /b 0
 
 :check_venv
 if not exist ".venv\Scripts\python.exe" goto venv_failed
