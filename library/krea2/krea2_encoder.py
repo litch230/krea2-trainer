@@ -19,16 +19,11 @@ try:
         Qwen3VLConfig,
         Qwen3VLForConditionalGeneration,
     )
-except ImportError:
-    try:
-        from transformers import (
-            Qwen2_5_VLConfig as Qwen3VLConfig,
-            Qwen2_5_VLForConditionalGeneration as Qwen3VLForConditionalGeneration,
-        )
-    except ImportError:
-        from transformers import AutoConfig, AutoModelForCausalLM
-        Qwen3VLConfig = AutoConfig
-        Qwen3VLForConditionalGeneration = AutoModelForCausalLM
+except ImportError as exc:
+    raise ImportError(
+        "Krea 2 requires transformers 4.57.1 or newer with native Qwen3-VL support. "
+        "Run install.bat to update the environment."
+    ) from exc
 
 from library.safetensors_utils import load_split_weights
 from library.fp8_optimization_utils import apply_fp8_monkey_patch

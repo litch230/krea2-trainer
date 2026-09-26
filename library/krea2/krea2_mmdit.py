@@ -495,7 +495,6 @@ class SingleStreamDiT(nn.Module):
                     freqs,
                     attn_params,
                     use_reentrant=False,
-                    early_stop=True,
                 )
             else:
                 combined = block(combined, tvec, freqs, attn_params)
