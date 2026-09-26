@@ -7,12 +7,15 @@ echo.
 echo Krea 2 Trainer - dependency installer
 echo =====================================
 
+:detect_python
 if exist ".venv\Scripts\python.exe" goto install_packages
 
 where py >nul 2>nul
 if errorlevel 1 goto try_python
 
 set "PY_LAUNCHER="
+call :find_py_version 3.13
+if defined PY_LAUNCHER goto create_venv_with_launcher
 call :find_py_version 3.12
 if defined PY_LAUNCHER goto create_venv_with_launcher
 call :find_py_version 3.11
@@ -27,11 +30,31 @@ goto check_venv
 
 :try_python
 where python >nul 2>nul
-if errorlevel 1 goto no_python
-python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 1)" >nul 2>nul
-if errorlevel 1 goto no_python
-python -m venv .venv
-goto check_venv
+if errorlevel 1 goto try_known_python_paths
+python -c "import sys; raise SystemExit(0 if (3,10) <= sys.version_info[:2] <= (3,13) else 1)" >nul 2>nul
+if not errorlevel 1 (
+    python -m venv .venv
+    goto check_venv
+)
+
+:try_known_python_paths
+if exist "%LocalAppData%\Programs\Python\Python313\python.exe" (
+    "%LocalAppData%\Programs\Python\Python313\python.exe" -m venv .venv
+    goto check_venv
+)
+if exist "%ProgramFiles%\Python313\python.exe" (
+    "%ProgramFiles%\Python313\python.exe" -m venv .venv
+    goto check_venv
+)
+if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
+    "%LocalAppData%\Programs\Python\Python312\python.exe" -m venv .venv
+    goto check_venv
+)
+if exist "%ProgramFiles%\Python312\python.exe" (
+    "%ProgramFiles%\Python312\python.exe" -m venv .venv
+    goto check_venv
+)
+goto no_python
 
 :find_py_version
 set "PY_CHECK_FILE=%TEMP%\krea2-python-check-%RANDOM%-%RANDOM%.tmp"
@@ -88,8 +111,37 @@ exit /b 0
 
 :no_python
 echo.
-echo Python 3.10, 3.11, or 3.12 (64-bit) was not found.
+echo Python 3.10, 3.11, 3.12, or 3.13 (64-bit) was not found.
+if defined PYTHON_INSTALL_ATTEMPTED goto python_install_failed
+
+set "INSTALL_PYTHON="
+set /p "INSTALL_PYTHON=Install Python 3.12 now? [Y/N]: "
+if /i not "%INSTALL_PYTHON%"=="Y" goto python_manual_install
+set "PYTHON_INSTALL_ATTEMPTED=1"
+
+where py >nul 2>nul
+if errorlevel 1 goto install_python_with_winget
+echo.
+echo Installing Python 3.12...
+py install 3.12
+if not errorlevel 1 goto detect_python
+
+:install_python_with_winget
+where winget >nul 2>nul
+if errorlevel 1 goto python_install_failed
+echo.
+echo Installing Python 3.12 with winget...
+winget install --id Python.Python.3.12 --exact --source winget --scope user --accept-package-agreements --accept-source-agreements
+if errorlevel 1 goto python_install_failed
+goto detect_python
+
+:python_install_failed
+echo.
+echo Python could not be installed automatically.
+
+:python_manual_install
 echo Install Python from https://www.python.org/downloads/windows/
+echo Then run install.bat again.
 if not defined NO_PAUSE pause
 exit /b 1
 

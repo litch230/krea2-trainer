@@ -4,11 +4,13 @@ A simple Windows interface for training Krea 2 LoRAs.
 
 ## Installation
 
-Install Python, then run:
+Run:
 
 ```text
 install.bat
 ```
+
+The installer can install Python if it is missing.
 
 ## Start
 
